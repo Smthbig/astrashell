@@ -1,0 +1,5 @@
+[lints.rust]
+// Allow dead code in development - will be strict for release
+dead_code = "allow"
+// Allow unused imports in development
+unused_imports = "allow"

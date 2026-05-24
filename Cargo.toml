@@ -1,0 +1,4 @@
+include = ["../rust-toolchain.toml"]
+
+[workspace]
+members = ["runtime"]

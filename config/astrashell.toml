@@ -1,0 +1,59 @@
+[runtime]
+rootfs = "/data/data/com.astrashell/files/rootfs"
+tmpdir = "/tmp"
+workdir = "/home/astra"
+hostname = "astrashell"
+dns = ["8.8.8.8", "1.1.1.1"]
+env = ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/home/astra", "TERM=xterm-256color"]
+
+[engine]
+mode = "auto"
+autodetect = true
+max_containers = 4
+default_timeout_ms = 30000
+pid1 = "/sbin/init"
+init_system = "none"
+
+[filesystem]
+overlay = true
+upper_dir = "/data/data/com.astrashell/files/upper"
+work_dir = "/data/data/com.astrashell/files/work"
+fuse = false
+bind_mounts = []
+tmpfs = ["/tmp", "/run", "/var/log"]
+proc = true
+sys = true
+dev = true
+pts = true
+shm_size = "64M"
+
+[network]
+enabled = true
+type = "slirp"
+port_forwards = ["2222:22", "8080:80", "3000:3000"]
+dns = ["8.8.8.8", "1.1.1.1"]
+mtu = 1500
+
+[security]
+seccomp_profile = "default.json"
+capabilities = []
+no_new_privs = true
+readonly_rootfs = false
+mask_paths = ["/proc/sysrq-trigger", "/proc/irq", "/proc/bus"]
+landlock = false
+
+[gui]
+enabled = false
+display = "none"
+width = 1080
+height = 1920
+dpi = 320
+vulkan = false
+opengl = false
+clipboard = false
+audio = false
+
+[logging]
+level = "info"
+json = false
+android_log = true

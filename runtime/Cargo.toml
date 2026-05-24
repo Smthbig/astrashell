@@ -1,0 +1,98 @@
+[package]
+name = "astrashell-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "AstraShell - Next-generation Android Linux runtime platform"
+
+[lib]
+name = "astrashell"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "astrashelld"
+path = "src/main.rs"
+
+[features]
+default = ["native-engine", "container-engine"]
+native-engine = []
+container-engine = ["nix", "caps"]
+vm-engine = ["crosvm-bindings"]
+avf = []
+gui = []
+gpu = []
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+toml = "0.8"
+rmp-serde = "1.1"
+
+# Container/Namespace
+nix = { version = "0.27", optional = true }
+caps = { version = "0.5", optional = true }
+
+# Filesystem
+fuse = "0.7"
+libc = "0.2"
+vfs = "0.7"
+
+# Syscall interception
+seccompiler = "0.4"
+errno = "0.3"
+
+# IPC
+tonic = { version = "0.11", features = ["tls", "compression"] }
+prost = "0.12"
+vsock = "0.4"
+
+# Logging
+tracing = { version = "0.1", features = ["max_level_debug", "release_max_level_info"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+log = "0.4"
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# ELF handling
+goblin = "0.8"
+
+# Compression
+flate2 = "1.0"
+tar = "0.4"
+xz2 = "0.1"
+zstd = "0.13"
+
+# Crypto
+sha2 = "0.10"
+ed25519-dalek = "2.0"
+rand = "0.8"
+
+# HTTP/WebSocket for web terminal
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Signal handling
+signal-hook = "0.3"
+signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
+
+# Event system
+event-listener = "4.0"
+
+# Memory management
+mimalloc = { version = "0.1", features = ["secure"] }
+
+# OCI/docker
+oci-spec = "0.6"
+
+[build-dependencies]
+cc = "1.0"
