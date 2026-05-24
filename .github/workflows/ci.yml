@@ -5,19 +5,28 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 6 * * 1'  # weekly Monday 6AM
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
+  NDK_VERSION: r26d
+  ANDROID_API_LEVEL: 30
+  RUST_TARGET: aarch64-linux-android
 
 jobs:
   lint-rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          target: aarch64-linux-android
+          targets: ${{ env.RUST_TARGET }}
           components: clippy, rustfmt
       - run: cargo clippy -- -D warnings
         working-directory: runtime
@@ -28,9 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          target: aarch64-linux-android
+          targets: ${{ env.RUST_TARGET }}
       - run: cargo test
         working-directory: runtime
 
@@ -38,15 +47,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          target: aarch64-linux-android
-      - name: Setup NDK
+          targets: ${{ env.RUST_TARGET }}
+      - name: Install NDK
         run: |
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
-      - name: Build Rust
-        run: cargo build --release --target aarch64-linux-android
+          NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
+          wget -q "https://dl.google.com/android/repository/${NDK_ZIP}"
+          unzip -q "$NDK_ZIP" -d /tmp/
+          rm "$NDK_ZIP"
+          TOOLCHAIN="/tmp/android-ndk-${NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64"
+          echo "CC_aarch64_linux_android=${TOOLCHAIN}/bin/aarch64-linux-android${ANDROID_API_LEVEL}-clang" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=${TOOLCHAIN}/bin/llvm-ar" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${TOOLCHAIN}/bin/aarch64-linux-android${ANDROID_API_LEVEL}-clang" >> $GITHUB_ENV
+      - run: cargo build --release --target ${{ env.RUST_TARGET }}
         working-directory: runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libastrashell-so
+          path: runtime/target/${{ env.RUST_TARGET }}/release/libastrashell.so
 
   build-android:
     runs-on: ubuntu-latest
@@ -54,17 +73,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+      - name: Accept licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - name: Install SDK components
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;26.1.10909125" \
+            --sdk_root=$ANDROID_HOME || true
+      - uses: actions/download-artifact@v4
+        with:
+          name: libastrashell-so
+          path: android-app/app/src/main/jniLibs/arm64-v8a/
       - name: Build APK
         run: ./gradlew assembleDebug
         working-directory: android-app
-      - name: Upload APK
-        uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: astrashell-debug
           path: android-app/app/build/outputs/apk/debug/*.apk
@@ -73,10 +104,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install arch-install-scripts
+        run: sudo apt-get update && sudo apt-get install -y arch-install-scripts qemu-user-static binfmt-support
       - name: Build rootfs
         run: bash build/scripts/gen-rootfs.sh /tmp/rootfs
-      - name: Upload rootfs
-        uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: astrashell-arch-rootfs
           path: /tmp/astrashell-arch-rootfs.tar.gz
+
+  check-all:
+    if: always()
+    needs: [lint-rust, test-rust, build-rust, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "### CI Pipeline Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **lint-rust**: ${{ needs.lint-rust.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **test-rust**: ${{ needs.test-rust.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **build-rust**: ${{ needs.build-rust.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **build-android**: ${{ needs.build-android.result }}" >> $GITHUB_STEP_SUMMARY
