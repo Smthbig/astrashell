@@ -1,6 +1,5 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// OCI Runtime interface - compatibility with Docker/Podman images
 pub struct OCIRuntime;
@@ -11,9 +10,9 @@ impl OCIRuntime {
     /// Pull an OCI image from registry
     pub async fn pull_image(&self, image_ref: &str) -> Result<OCIImage> {
         tracing::info!("Pulling OCI image: {}", image_ref);
-        let (registry, repo, tag) = Self::parse_image_ref(image_ref)?;
-        let client = crate::container::registry::RegistryClient::new(&registry);
-        client.pull(&repo, &tag).await
+        let (_registry, _repo, _tag) = Self::parse_image_ref(image_ref)?;
+        // TODO: implement actual registry client
+        Err(anyhow::anyhow!("OCI pull not yet implemented"))
     }
 
     /// Unpack an OCI image to a rootfs
@@ -39,20 +38,32 @@ impl OCIRuntime {
     }
 
     /// Create an OCI container spec from config
-    pub fn create_spec(&self, config: &crate::Config) -> Result<oci_spec::runtime::Spec> {
-        let mut spec = oci_spec::runtime::Spec::default();
-        spec.set_root(oci_spec::runtime::Root {
-            path: config.runtime.rootfs.clone(),
-            ..Default::default()
+    pub fn create_spec(&self, config: &crate::Config) -> Result<String> {
+        let spec = serde_json::json!({
+            "ociVersion": "1.0.2",
+            "root": { "path": config.runtime.rootfs },
+            "hostname": config.runtime.hostname,
+            "process": {
+                "args": [config.engine.pid1],
+                "env": config.runtime.env,
+                "cwd": config.runtime.workdir,
+                "capabilities": {
+                    "bounding": ["CAP_ALL"],
+                    "effective": ["CAP_ALL"],
+                    "permitted": ["CAP_ALL"]
+                }
+            },
+            "linux": {
+                "namespaces": [
+                    {"type": "pid"},
+                    {"type": "mount"},
+                    {"type": "network"},
+                    {"type": "uts"},
+                    {"type": "ipc"}
+                ]
+            }
         });
-        spec.set_process(oci_spec::runtime::Process {
-            args: Some(vec![config.engine.pid1.clone()]),
-            env: Some(config.runtime.env.clone()),
-            cwd: Some(config.runtime.workdir.clone()),
-            ..Default::default()
-        });
-        spec.set_hostname(config.runtime.hostname.clone());
-        Ok(spec)
+        Ok(serde_json::to_string_pretty(&spec)?)
     }
 
     fn parse_image_ref(image_ref: &str) -> Result<(String, String, String)> {

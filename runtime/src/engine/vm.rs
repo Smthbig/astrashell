@@ -1,15 +1,13 @@
 use crate::engine::Engine;
 use crate::Config;
-use crate::vm::avf::AVFManager;
-use crate::vm::microdroid::MicrodroidPayload;
 use anyhow::Result;
 use async_trait::async_trait;
 
 /// AVF-backed microVM execution engine
-/// This provides the strongest isolation using hardware virtualization
+/// Provides the strongest isolation using hardware virtualization.
 /// Requires Android 15+ with AVF support (Pixel 7+, etc.)
 pub struct AVFEngine {
-    avf: Option<AVFManager>,
+    avf: Option<avf::AVFManager>,
 }
 
 impl AVFEngine {
@@ -24,27 +22,21 @@ impl Engine for AVFEngine {
     fn priority(&self) -> u32 { 30 }
 
     async fn available(&self) -> bool {
-        // Probe for AVF support
         #[cfg(target_os = "android")]
         {
-            // Check for VirtualizationService via JNI
-            let has_avf = crate::platform::android::avf::check_avf_support().await
-                .unwrap_or(false);
-            return has_avf;
+            crate::platform::check_avf_support().await.unwrap_or(false)
         }
         #[cfg(not(target_os = "android"))]
         {
-            // Fallback: check if /dev/kvm is accessible
             std::path::Path::new("/dev/kvm").exists()
         }
     }
 
     async fn execute(&self, config: &Config) -> Result<()> {
         tracing::info!("Starting AVF microVM execution engine");
-        let mut avf = AVFManager::new();
-        avf.initialize().await?;
+        let mut mgr = avf::AVFManager::new();
+        mgr.initialize().await?;
 
-        // Build VM config
         let vm_config = avf::AVFVMConfig {
             name: "astrashell".into(),
             kernel: config.runtime.rootfs.clone() + "/boot/vmlinuz",
@@ -63,16 +55,15 @@ impl Engine for AVFEngine {
             console: true,
         };
 
-        avf.start_vm(vm_config).await?;
-        avf.wait_for_shutdown().await?;
+        mgr.start_vm(vm_config).await?;
+        mgr.wait_for_shutdown().await?;
         Ok(())
     }
 
-    async fn exec(&self, config: &Config, cmd: &[String]) -> Result<i32> {
-        if let Some(avf) = &self.avf {
-            avf.exec_vsock(cmd).await
+    async fn exec(&self, _config: &Config, cmd: &[String]) -> Result<i32> {
+        if let Some(mgr) = &self.avf {
+            mgr.exec_vsock(cmd).await
         } else {
-            // Fallthrough to shell exec if VM not running
             let args: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
             let status = std::process::Command::new(args[0])
                 .args(&args[1..])
@@ -113,17 +104,11 @@ pub mod avf {
         pub fn new() -> Self { Self }
 
         pub async fn initialize(&mut self) -> Result<()> {
-            // Initialize AVF VirtualizationService connection
-            // Uses AIDL over Binder or vsock to communicate with virtmgr
             tracing::info!("AVF manager initializing");
             Ok(())
         }
 
         pub async fn start_vm(&self, _config: AVFVMConfig) -> Result<()> {
-            // 1. Create VirtualMachineConfig via AIDL
-            // 2. Call VirtualizationService.startVm()
-            // 3. crosvm boots kernel + initrd
-            // 4. Microdroid payload starts
             tracing::info!("Starting AVF VM");
             Ok(())
         }
@@ -134,7 +119,6 @@ pub mod avf {
         }
 
         pub async fn exec_vsock(&self, _cmd: &[String]) -> Result<i32> {
-            // Execute command inside VM via vsock
             Ok(0)
         }
     }

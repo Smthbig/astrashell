@@ -2,7 +2,6 @@ pub mod engine;
 pub mod syscall;
 pub mod namespace;
 pub mod container;
-pub mod vm;
 pub mod fs;
 pub mod net;
 pub mod gui;
